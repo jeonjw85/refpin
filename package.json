@@ -2,6 +2,14 @@
   "name": "refpin",
   "version": "0.1.0",
   "description": "Serializable code references with relocation, change detection, and short diffs.",
+  "license": "MIT",
+  "keywords": [
+    "code-reference",
+    "source-code",
+    "anchor",
+    "diff",
+    "typescript"
+  ],
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -19,7 +27,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.ko.md"
   ],
   "sideEffects": false,
   "engines": {
