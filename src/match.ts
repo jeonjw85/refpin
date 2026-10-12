@@ -1,5 +1,6 @@
 import type { CodeAnchor, LineRange } from "./types.js";
 import { findSequences } from "./text.js";
+import { selectOccurrences } from "./overlap.js";
 
 function hasEvidence(context: readonly string[]): boolean {
   return context.join("").replace(/\s/g, "").length >= 8;
@@ -168,14 +169,7 @@ export function findChangedRanges(anchor: CodeAnchor, lines: readonly string[]):
     b.contexts - a.contexts || b.matched - a.matched ||
     Math.abs(a.end - a.start - length) - Math.abs(b.end - b.start - length) || a.start - b.start);
 
-  const occurrences: Candidate[] = [];
-  for (const candidate of candidates) {
-    const duplicate = occurrences.some((other) => {
-      const overlap = Math.min(candidate.end, other.end) - Math.max(candidate.start, other.start);
-      return overlap >= Math.min(candidate.end - candidate.start, other.end - other.start) / 2;
-    });
-    if (!duplicate) occurrences.push(candidate);
-  }
+  const occurrences = selectOccurrences(candidates);
   return occurrences.sort((a, b) => a.start - b.start || a.end - b.end)
     .map(({ start, end }) => ({ startLine: start + 1, endLine: end }));
 }

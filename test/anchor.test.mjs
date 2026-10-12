@@ -369,3 +369,14 @@ test("retains multiple context-supported survivors after leading deletions", () 
     status: "ambiguous", candidates: [{ startLine: 2, endLine: 3 }, { startLine: 6, endLine: 7 }],
   });
 });
+
+test("retains every distinct occurrence in a large repetitive file", () => {
+  const anchor = createAnchor("const selectedValue = 1000;", options);
+  const source = Array(5000).fill("const selectedValue = 1001;").join("\n");
+  const result = checkAnchor(anchor, source);
+  assert.equal(result.status, "ambiguous");
+  assert.equal(result.candidates.length, 5000);
+  for (let i = 0; i < result.candidates.length; i++) {
+    assert.deepEqual(result.candidates[i], { startLine: i + 1, endLine: i + 1 });
+  }
+});
