@@ -1,5 +1,7 @@
 import type { AnchorResult, CheckAnchorOptions, CodeAnchor, CreateAnchorOptions } from "./types.js";
 import { contentHash, findSequences, sourceLines } from "./text.js";
+import { createDiff } from "./diff.js";
+import { findChangedRanges } from "./match.js";
 
 function assertObject(value: unknown, name: string): asserts value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -98,6 +100,17 @@ export function checkAnchor(
   if (candidates.length === 1) {
     const range = candidates[0]!;
     return { status: range.startLine === anchor.startLine ? "unchanged" : "moved", ...range };
+  }
+  const changed = findChangedRanges(anchor, lines);
+  if (changed.length > 1) return { status: "ambiguous", candidates: changed };
+  if (changed.length === 1) {
+    const range = changed[0]!;
+    return {
+      status: "changed",
+      ...range,
+      diff: createDiff(selected, lines.slice(range.startLine - 1, range.endLine),
+        anchor.startLine, range.startLine, maxDiffLines),
+    };
   }
   return { status: "missing" };
 }
