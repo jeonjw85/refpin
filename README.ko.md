@@ -133,10 +133,15 @@ import type { CodeAnchor, AnchorResult, LineRange } from "refpin";
 
 ```sh
 npm ci                 # Install the locked development dependencies.
+npm run check          # Run all release checks below.
 npm test               # Build ESM/CJS and run tests.
-npm run typecheck      # Check library types.
+npm run typecheck      # Check library and ESM/CJS consumer types.
+npm run test:package   # Install a tarball in an isolated consumer and verify it.
 npm pack --dry-run     # Inspect package contents.
+npm publish --dry-run  # Exercise publication hooks without publishing.
 ```
+
+CI에서 Node.js 22·24·26별 배포 검사 실행. `npm publish` 시 `prepublishOnly`를 통한 동일 검사 실행. 패키지 검증 범위: 배포 파일, ESM·CommonJS 실행, 설치된 TypeScript 선언.
 
 미배포 체크아웃의 로컬 사용: 해당 폴더에서 `npm ci`와 `npm run build` 실행 후, 사용하는 프로젝트에서 `npm install /absolute/path/to/refpin` 실행.
 

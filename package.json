@@ -3,13 +3,7 @@
   "version": "0.1.0",
   "description": "Serializable code references with relocation, change detection, and short diffs.",
   "license": "MIT",
-  "keywords": [
-    "code-reference",
-    "source-code",
-    "anchor",
-    "diff",
-    "typescript"
-  ],
+  "keywords": ["code-reference", "source-code", "anchor", "diff", "typescript"],
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -26,19 +20,17 @@
       }
     }
   },
-  "files": [
-    "dist",
-    "README.ko.md"
-  ],
+  "files": ["dist", "README.ko.md"],
   "sideEffects": false,
-  "engines": {
-    "node": ">=22"
-  },
+  "engines": { "node": ">=22" },
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
-    "typecheck": "npm run build && tsc --noEmit -p tsconfig.json",
-    "prepack": "npm run build"
+    "typecheck": "npm run build && tsc --noEmit -p test/types/tsconfig.json",
+    "test:package": "npm run build && node scripts/verify-package.mjs",
+    "check": "npm test && npm run typecheck && npm run test:package",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

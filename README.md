@@ -133,10 +133,15 @@ The first version searches within the supplied file. Cross-file moves and symbol
 
 ```sh
 npm ci                 # Install the locked development dependencies.
+npm run check          # Run all release checks below.
 npm test               # Build ESM/CJS and run tests.
-npm run typecheck      # Check library types.
+npm run typecheck      # Check library and ESM/CJS consumer types.
+npm run test:package   # Install a tarball in an isolated consumer and verify it.
 npm pack --dry-run     # Inspect package contents.
+npm publish --dry-run  # Exercise publication hooks without publishing.
 ```
+
+CI runs the release checks on Node.js 22, 24, and 26. `npm publish` runs them through `prepublishOnly` before publication. The package verifier checks distribution files, both module formats, and installed TypeScript declarations.
 
 To use an unpublished checkout, run `npm ci` and `npm run build` in that checkout, then run `npm install /absolute/path/to/refpin` in the consuming project.
 
