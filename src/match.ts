@@ -69,6 +69,8 @@ interface Alignment {
 }
 
 const EPSILON = 1e-9;
+const CONTEXT_THRESHOLD = 0.65;
+const CONTENT_THRESHOLD = 0.85;
 
 function chooseAlignment(a: Alignment, b: Alignment): Alignment {
   if (Math.abs(a.cost - b.cost) > EPSILON) return a.cost < b.cost ? a : b;
@@ -94,13 +96,15 @@ function initialAlignments(length: number, start: number, enabled = true): Align
   }));
 }
 
-function advanceAlignments(previous: Alignment[], scores: number[], first: Alignment): Alignment[] {
+function advanceAlignments(
+  previous: Alignment[], scores: number[], first: Alignment, margin: number,
+): Alignment[] {
   const current = [first];
   for (let i = 1; i <= scores.length; i++) {
     const score = scores[i - 1]!;
     const diagonal = previous[i - 1]!;
-    const substitution = { cost: diagonal.cost + 1 - score, starts: diagonal.starts, matched: diagonal.matched + score };
-    const insertion = { ...previous[i]!, cost: previous[i]!.cost + 1 };
+    const substitution = { cost: diagonal.cost + 1 - score - margin, starts: diagonal.starts, matched: diagonal.matched + score };
+    const insertion = { ...previous[i]!, cost: previous[i]!.cost + 1 - margin };
     const deletion = { ...current[i - 1]!, cost: current[i - 1]!.cost + 1 };
     current.push(chooseAlignment(chooseAlignment(substitution, insertion), deletion));
   }
@@ -113,34 +117,49 @@ function similarCandidates(
 ): Candidate[] {
   const original = selected.map(fingerprint);
   const length = original.length;
-  let previous = initialAlignments(length, 0);
-  // Keep leading-context paths separate so a free-start path cannot discard them.
-  let supported = starts.size > 0 ? initialAlignments(length, 0, starts.has(0)) : undefined;
+  function search(margin: number, context: "none" | "before" | "after") {
+    return {
+      margin, context,
+      previous: initialAlignments(length, 0, context !== "before" || starts.has(0)),
+    };
+  }
+  // cost <= margin * max(length, span) is equivalent to either
+  // cost <= margin * length or cost - margin * span <= 0.
+  // Retain both objectives; minimum raw cost alone can discard a qualifying span.
+  const searches = [search(0, "none")];
+  if (starts.size > 0) searches.push(search(0, "before"));
+  searches.push(search(1 - CONTENT_THRESHOLD, "none"));
+  if (starts.size > 0) searches.push(search(1 - CONTEXT_THRESHOLD, "before"));
+  if (ends.size > 0) searches.push(search(1 - CONTEXT_THRESHOLD, "after"));
   const candidates: Candidate[] = [];
   for (let j = 0; j < lines.length; j++) {
     const end = j + 1;
     // Empty context pairs prove deletion here; do not align against their delimiters.
     if (blockedLines.has(j)) {
-      previous = initialAlignments(length, end);
-      if (supported) supported = initialAlignments(length, end, starts.has(end));
+      for (const item of searches) {
+        item.previous = initialAlignments(length, end, item.context !== "before" || starts.has(end));
+      }
       continue;
     }
     const line = fingerprint(lines[j]!);
     const scores = original.map((item) => similarity(item, line));
-    previous = advanceAlignments(previous, scores, { cost: 0, starts: [end], matched: 0 });
-    if (supported) {
-      const first = starts.has(end) ? { cost: 0, starts: [end], matched: 0 }
-        : { ...supported[0]!, cost: supported[0]!.cost + 1 };
-      supported = advanceAlignments(supported, scores, first);
-    }
-    for (const alignment of [previous[length], supported?.[length]]) {
-      if (!alignment) continue;
+    let rawAccepted = false;
+    for (const item of searches) {
+      const first = item.context !== "before" || starts.has(end) ? { cost: 0, starts: [end], matched: 0 }
+        : { ...item.previous[0]!, cost: item.previous[0]!.cost + 1 - item.margin };
+      item.previous = advanceAlignments(item.previous, scores, first, item.margin);
+      // Keep the existing boundary preference when raw-cost matching already qualifies.
+      if (item.margin > 0 && rawAccepted) continue;
+      if (item.context === "after" && !ends.has(end)) continue;
+      const alignment = item.previous[length]!;
       const start = completedStart(alignment, end, length, maxLength);
       if (start === undefined) continue;
       const span = end - start;
-      const score = Math.max(0, 1 - alignment.cost / Math.max(length, span));
+      const cost = alignment.cost + item.margin * span;
+      const score = Math.max(0, 1 - cost / Math.max(length, span));
       const contexts = Number(starts.has(start)) + Number(ends.has(end));
-      if (score + EPSILON >= (contexts > 0 ? 0.65 : 0.85)) {
+      if (score + EPSILON >= (contexts > 0 ? CONTEXT_THRESHOLD : CONTENT_THRESHOLD)) {
+        if (item.margin === 0) rawAccepted = true;
         candidates.push({
           start, end, score, contexts, matched: alignment.matched, bounded: false,
         });

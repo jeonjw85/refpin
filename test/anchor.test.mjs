@@ -282,6 +282,34 @@ test("uses surviving trailing context to locate a block with a deleted line", ()
   assert.equal(result.endLine, 6);
 });
 
+test("retains a qualifying insertion when a lower-cost shorter alignment fails its threshold", () => {
+  const source = "initializeProcessor();\nreturnReady();\nAFTER_BOUNDARY";
+  const anchor = createAnchor(source, { ...options, endLine: 2, contextLines: 1 });
+  const result = checkAnchor(anchor, source.replace("returnReady();", "audit();\nreturnReady();"));
+  assert.deepEqual(result, {
+    status: "changed", startLine: 1, endLine: 3,
+    diff: {
+      text: "@@ -1,2 +1,3 @@\n initializeProcessor();\n+audit();\n returnReady();",
+      truncated: false,
+    },
+  });
+});
+
+test("retains qualifying inserted lines without surrounding context", () => {
+  const lines = [
+    "initializeProcessorWithUncommonPayloadMetadataAndConfiguration();",
+    "returnReadyWithUncommonCompletionStateAndOutput();",
+    ...Array.from("αβγδεζηθικ", (letter) => letter.repeat(15)),
+  ];
+  const anchor = createAnchor(lines.join("\n"), { ...options, endLine: 12, contextLines: 0 });
+  const updated = [...lines.slice(0, 2), "X", "audit();", ...lines.slice(2)].join("\n");
+  const result = checkAnchor(anchor, updated);
+  assert.equal(result.status, "changed");
+  assert.equal(result.startLine, 1);
+  assert.equal(result.endLine, 14);
+  assert.match(result.diff.text, /\+X\n\+audit\(\);/);
+});
+
 test("detects indentation changes instead of normalizing them away", () => {
   const anchor = createAnchor(standaloneFunction, standaloneOptions);
   const result = checkAnchor(anchor, standaloneFunction.replace(/^/gm, "  "));
