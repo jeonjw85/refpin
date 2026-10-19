@@ -60,13 +60,23 @@ test("supports sparse coordinates without allocating by file length", () => {
   assert.deepEqual(selectOccurrences([]), []);
 });
 
+test("retains independently supported overlaps without duplicating a shared start", () => {
+  const first = { start: 0, end: 2, complete: true };
+  const sameStart = { start: 0, end: 3, complete: true };
+  const second = { start: 1, end: 3, complete: true };
+  const fragment = { start: 1, end: 2, complete: false };
+  assert.deepEqual(selectOccurrences([first, sameStart, second, fragment],
+    (a, b) => a.complete && b.complete), [first, second]);
+});
+
 // Independent brute-force oracle for the greedy half-overlap contract.
-function referenceSelection(ranges) {
+function referenceSelection(ranges, distinct) {
   const kept = [];
   for (const range of ranges) {
     const duplicate = kept.some((other) => {
       const intersection = Math.min(range.end, other.end) - Math.max(range.start, other.start);
-      return intersection >= Math.min(range.end - range.start, other.end - other.start) / 2;
+      return intersection >= Math.min(range.end - range.start, other.end - other.start) / 2 &&
+        (range.start === other.start || !distinct?.(range, other));
     });
     if (!duplicate) kept.push(range);
   }
@@ -82,5 +92,8 @@ test("matches brute-force selection across deterministic interval arrangements",
       return { start, end: start + 1 + random() % 50, id };
     });
     assert.deepEqual(selectOccurrences(ranges), referenceSelection(ranges), `sample ${sample}`);
+    const distinct = (a, b) => a.id % 3 !== b.id % 3;
+    assert.deepEqual(selectOccurrences(ranges, distinct), referenceSelection(ranges, distinct),
+      `independent overlaps in sample ${sample}`);
   }
 });

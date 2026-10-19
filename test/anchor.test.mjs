@@ -310,6 +310,14 @@ test("retains qualifying inserted lines without surrounding context", () => {
   assert.match(result.diff.text, /\+X\n\+audit\(\);/);
 });
 
+test("retains equally supported overlapping modified occurrences", () => {
+  const source = "recordValue(1000);\nrecordValue(1000);";
+  const anchor = createAnchor(source, { ...options, endLine: 2, contextLines: 0 });
+  assert.deepEqual(checkAnchor(anchor, Array(3).fill("recordValue(1001);").join("\n")), {
+    status: "ambiguous", candidates: [{ startLine: 1, endLine: 2 }, { startLine: 2, endLine: 3 }],
+  });
+});
+
 test("detects indentation changes instead of normalizing them away", () => {
   const anchor = createAnchor(standaloneFunction, standaloneOptions);
   const result = checkAnchor(anchor, standaloneFunction.replace(/^/gm, "  "));

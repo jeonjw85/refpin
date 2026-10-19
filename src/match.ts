@@ -188,7 +188,14 @@ export function findChangedRanges(anchor: CodeAnchor, lines: readonly string[]):
     b.contexts - a.contexts || b.matched - a.matched ||
     Math.abs(a.end - a.start - length) - Math.abs(b.end - b.start - length) || a.start - b.start);
 
-  const occurrences = selectOccurrences(candidates);
+  function complete(candidate: Candidate): boolean {
+    return !candidate.bounded && candidate.end - candidate.start === length &&
+      Math.abs(candidate.matched - candidate.score * length) <= EPSILON;
+  }
+  // Equally supported gap-free full alignments at different starts are distinct,
+  // even when their ranges overlap. Weaker boundary variants still consolidate.
+  const occurrences = selectOccurrences(candidates, (a, b) =>
+    Math.abs(a.score - b.score) <= EPSILON && complete(a) && complete(b));
   return occurrences.sort((a, b) => a.start - b.start || a.end - b.end)
     .map(({ start, end }) => ({ startLine: start + 1, endLine: end }));
 }
