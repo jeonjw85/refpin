@@ -64,7 +64,8 @@ function similarity(a: Fingerprint, b: Fingerprint): number {
 
 interface Alignment {
   cost: number;
-  starts: number[];
+  /** Sorted, disjoint inclusive ranges of tied starts. */
+  starts: readonly number[];
   matched: number;
 }
 
@@ -72,27 +73,73 @@ const EPSILON = 1e-9;
 const CONTEXT_THRESHOLD = 0.65;
 const CONTENT_THRESHOLD = 0.85;
 
+function mergeStarts(a: readonly number[], b: readonly number[]): readonly number[] {
+  if (a === b || b.length === 0) return a;
+  if (a.length === 0) return b;
+  const merged: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    const next = j >= b.length || (i < a.length && a[i]! <= b[j]!) ? a : b;
+    const index = next === a ? i : j;
+    const start = next[index]!;
+    const end = next[index + 1]!;
+    if (next === a) i += 2;
+    else j += 2;
+    if (merged.length > 0 && start <= merged[merged.length - 1]! + 1) {
+      merged[merged.length - 1] = Math.max(merged[merged.length - 1]!, end);
+    } else merged.push(start, end);
+  }
+  return merged;
+}
+
 function chooseAlignment(a: Alignment, b: Alignment): Alignment {
   if (Math.abs(a.cost - b.cost) > EPSILON) return a.cost < b.cost ? a : b;
   if (Math.abs(a.matched - b.matched) > EPSILON) return a.matched > b.matched ? a : b;
   // Span preference is not additive; defer it until the full anchor is aligned.
-  return { cost: a.cost, matched: a.matched, starts: [...new Set([...a.starts, ...b.starts])] };
+  return { cost: a.cost, matched: a.matched, starts: mergeStarts(a.starts, b.starts) };
 }
 
-function completedStart(alignment: Alignment, end: number, length: number, maxLength: number): number | undefined {
+function completedStart(
+  alignment: Alignment, end: number, length: number, maxLength: number, positions?: readonly number[],
+): number | undefined {
   let best: number | undefined;
-  for (const start of alignment.starts) {
-    if (start === end || end - start > maxLength) continue;
+  let bestDelta = Infinity;
+  function consider(start: number): void {
+    if (start >= end || end - start > maxLength) return;
     const delta = Math.abs(end - start - length);
-    const bestDelta = best === undefined ? Infinity : Math.abs(end - best - length);
-    if (delta < bestDelta || (delta === bestDelta && start < best!)) best = start;
+    if (delta < bestDelta || (delta === bestDelta && start < best!)) {
+      best = start;
+      bestDelta = delta;
+    }
+  }
+  for (let i = 0; i < alignment.starts.length; i += 2) {
+    if (positions) {
+      const first = alignment.starts[i]!;
+      const last = alignment.starts[i + 1]!;
+      const target = Math.max(end - maxLength, end - length);
+      let left = first;
+      let right = last + 1;
+      while (left < right) {
+        const middle = Math.floor((left + right) / 2);
+        if (positions[middle]! < target) left = middle + 1;
+        else right = middle;
+      }
+      consider(positions[Math.max(first, left - 1)]!);
+      consider(positions[Math.min(last, left)]!);
+      continue;
+    }
+    const first = Math.max(alignment.starts[i]!, end - maxLength);
+    const last = Math.min(alignment.starts[i + 1]!, end - 1);
+    if (first > last) continue;
+    consider(Math.max(first, Math.min(last, end - length)));
   }
   return best;
 }
 
 function initialAlignments(length: number, start: number, enabled = true): Alignment[] {
   return Array.from({ length: length + 1 }, (_, i) => ({
-    cost: enabled ? i : Infinity, starts: enabled ? [start] : [], matched: 0,
+    cost: enabled ? i : Infinity, starts: enabled ? [start, start] : [], matched: 0,
   }));
 }
 
@@ -117,9 +164,14 @@ function similarCandidates(
 ): Candidate[] {
   const original = selected.map(fingerprint);
   const length = original.length;
+  // Leading-context starts may be sparse in line coordinates. Compress their
+  // ordinals instead, so adjacent allowed starts still form a single range.
+  const supportedStarts = [...starts].sort((a, b) => a - b);
+  const ordinals = new Map(supportedStarts.map((start, index) => [start, index]));
   function search(margin: number, context: "none" | "before" | "after") {
     return {
       margin, context,
+      positions: context === "before" ? supportedStarts : undefined,
       previous: initialAlignments(length, 0, context !== "before" || starts.has(0)),
     };
   }
@@ -137,7 +189,8 @@ function similarCandidates(
     // Empty context pairs prove deletion here; do not align against their delimiters.
     if (blockedLines.has(j)) {
       for (const item of searches) {
-        item.previous = initialAlignments(length, end, item.context !== "before" || starts.has(end));
+        const start = item.positions ? ordinals.get(end) : end;
+        item.previous = initialAlignments(length, start ?? 0, start !== undefined);
       }
       continue;
     }
@@ -145,14 +198,15 @@ function similarCandidates(
     const scores = original.map((item) => similarity(item, line));
     let rawAccepted = false;
     for (const item of searches) {
-      const first = item.context !== "before" || starts.has(end) ? { cost: 0, starts: [end], matched: 0 }
+      const position = item.positions ? ordinals.get(end) : end;
+      const first = position !== undefined ? { cost: 0, starts: [position, position], matched: 0 }
         : { ...item.previous[0]!, cost: item.previous[0]!.cost + 1 - item.margin };
       item.previous = advanceAlignments(item.previous, scores, first, item.margin);
       // Keep the existing boundary preference when raw-cost matching already qualifies.
       if (item.margin > 0 && rawAccepted) continue;
       if (item.context === "after" && !ends.has(end)) continue;
       const alignment = item.previous[length]!;
-      const start = completedStart(alignment, end, length, maxLength);
+      const start = completedStart(alignment, end, length, maxLength, item.positions);
       if (start === undefined) continue;
       const span = end - start;
       const cost = alignment.cost + item.margin * span;
